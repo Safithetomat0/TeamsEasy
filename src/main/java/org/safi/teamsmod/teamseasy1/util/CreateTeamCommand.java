@@ -77,14 +77,15 @@ public class CreateTeamCommand {
              return acceptInvitation(context, IntegerArgumentType.getInteger(context, "team"));
              }).requires(source -> source.hasPermissionLevel(0))));
 
-             // Command for a player to leave a team
-             dispatcher.register(CommandManager
-             .literal("teamleave")
-             .requires(source -> source.hasPermissionLevel(0))
-             .executes(TeamCommands::leaveTeam)
-             .requires(source -> source.hasPermissionLevel(0)));
 
              */
+            // Command for a player to leave a team
+            dispatcher.register(CommandManager
+                    .literal("teamleave")
+                    .requires(source -> source.hasPermissionLevel(0))
+                    .executes(CreateTeamCommand::leaveTeam)
+                    .requires(source -> source.hasPermissionLevel(0)));
+
         });
     }
 
@@ -234,6 +235,45 @@ public class CreateTeamCommand {
         teamLeaders.remove(teamName);
 
         player.sendMessage(Text.literal("Team " + teamName + " disbanded."), false);
+        return 1;
+    }
+
+    private static int leaveTeam(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        PlayerEntity player = source.getPlayer();
+        Scoreboard scoreboard = source.getServer().getScoreboard();
+
+
+        // Get the team that the player is currently in
+        if (player.getScoreboardTeam()==null){
+            player.sendMessage(Text.literal("You are not in a team."), true);
+            return 0;
+        }
+
+        Team playerTeam = scoreboard.getTeam(player.getScoreboardTeam().getName());
+
+
+        // Get the team name
+        String teamName = playerTeam.getName();
+        // Get the team leader
+        UUID leaderUuid = teamLeaders.get(teamName);
+        // Check if the player is in a team
+        if (player.getUuid()==leaderUuid){
+            player.sendMessage(Text.literal("You are the leader, you cant leave, Use /teamdisband."), true);
+            return 0;
+        }
+        if (playerTeam == null) {
+            player.sendMessage(Text.literal("You are not in a team."), true);
+            return 0;
+        }
+
+        // Remove the player from the team
+        scoreboard.removePlayerFromTeam(player.getEntityName(), playerTeam);
+
+        // Additional clean-up if necessary (remove player from associated data structures)
+        playerTeams.remove(player.getUuid());
+
+        player.sendMessage(Text.literal("You left the team " + teamName + "."), false);
         return 1;
     }
 
