@@ -43,32 +43,32 @@ public class CreateTeamCommand {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             // Command to create a team
             dispatcher.register(CommandManager
-                    .literal("teamcreate")
+                    .literal("tcreate")
                     .requires(source -> source.hasPermissionLevel(0))
                     .executes(CreateTeamCommand::createTeam)
                     .requires(source -> source.hasPermissionLevel(0)));
 
             dispatcher.register(CommandManager
-                    .literal("teamremoveall")
+                    .literal("tremoveall")
                     .requires(source -> source.hasPermissionLevel(2))
                     .executes(CreateTeamCommand::removeAllTeams)
                     .requires(source -> source.hasPermissionLevel(2)));
             dispatcher.register(CommandManager
-                    .literal("teamsinfo")
+                    .literal("tsinfo")
                     .requires(source -> source.hasPermissionLevel(0))
                     .executes(CreateTeamCommand::readTeams)
                     .requires(source -> source.hasPermissionLevel(0)));
 
             // Command to disband teams
             dispatcher.register(CommandManager
-                    .literal("teamdisband")
+                    .literal("tdisband")
                     .requires(source -> source.hasPermissionLevel(0))
                     .executes(CreateTeamCommand::disbandTeam)
                     .requires(source -> source.hasPermissionLevel(0)));
 
             // Command to invite a player to a team
             dispatcher.register(CommandManager
-                    .literal("teaminvite")
+                    .literal("tinvite")
                     .requires(source -> source.hasPermissionLevel(0))
                     .then(CommandManager.argument("player", EntityArgumentType.entity())
                     .requires(source -> source.hasPermissionLevel(0))
@@ -79,7 +79,7 @@ public class CreateTeamCommand {
 
             // Command for a player to accept an invitation
             dispatcher.register(CommandManager
-            .literal("teamaccept")
+            .literal("tccept")
             .requires(source -> source.hasPermissionLevel(0))
             .then(CommandManager.argument("team", IntegerArgumentType.integer()).suggests(TEAM_SUGGESTIONS)
             .executes(context -> {
@@ -88,7 +88,7 @@ public class CreateTeamCommand {
 
             // Command for a player to decline an invitation
             dispatcher.register(CommandManager
-            .literal("teamdecline")
+            .literal("tdecline")
             .requires(source -> source.hasPermissionLevel(0))
             .then(CommandManager.argument("team", StringArgumentType.string()).suggests(TEAM_SUGGESTIONS)
             .executes(context -> {
@@ -97,14 +97,14 @@ public class CreateTeamCommand {
 
             // Command for a player to leave a team
             dispatcher.register(CommandManager
-                    .literal("teamleave")
+                    .literal("tleave")
                     .requires(source -> source.hasPermissionLevel(0))
                     .executes(CreateTeamCommand::leaveTeam)
                     .requires(source -> source.hasPermissionLevel(0)));
 
             // Command for a player to leave a team
             dispatcher.register(CommandManager
-                    .literal("teamleader")
+                    .literal("tleader")
                     .requires(source -> source.hasPermissionLevel(0))
                     .then(CommandManager.argument("teamName", StringArgumentType.word())
                             .suggests(TEAM_SUGGESTIONS)
@@ -196,9 +196,9 @@ public class CreateTeamCommand {
         // For example, you can use the following code to send a message:
         Text invitationMessage = Text.literal("You have been invited to join " + teamName)
                 .formatted(Formatting.GREEN)
-                .append(Text.literal("\nType /teamaccept " + teamName + " to accept the invitation.")
+                .append(Text.literal("\nType /taccept " + teamName + " to accept the invitation.")
                         .formatted(Formatting.YELLOW))
-                .append(Text.literal("\nType /teamdecline " + teamName + " to decline the invitation.")
+                .append(Text.literal("\nType /tdecline " + teamName + " to decline the invitation.")
                         .formatted(Formatting.RED));
         invitedPlayer.sendMessage(invitationMessage, false);
         invitingPlayer.sendMessage(Text.of("You have invited  "+ invitedPlayer.getName()+ "."));
