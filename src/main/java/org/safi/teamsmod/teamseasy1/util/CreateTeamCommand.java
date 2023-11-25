@@ -1,7 +1,13 @@
 package org.safi.teamsmod.teamseasy1.util;
 
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.minecraft.command.CommandSource;
+import net.minecraft.command.argument.EntityArgumentType;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.Team;
@@ -27,6 +33,8 @@ public class CreateTeamCommand {
     private static final File DATA_FOLDER = new File("world/data"); // Adjust the path as needed
     private static final File TEAMS_FILE = new File(DATA_FOLDER, "teams.txt");
     private static final Map<String, UUID> teamLeaders = new HashMap<>();
+    private static final Map<String, UUID> teamInvitations = new HashMap<>();
+
 
 
     public static void register() {
@@ -57,34 +65,51 @@ public class CreateTeamCommand {
                     .requires(source -> source.hasPermissionLevel(0))
                     .executes(CreateTeamCommand::disbandTeam)
                     .requires(source -> source.hasPermissionLevel(0)));
-            /**
-             // Command to invite a player to a team
-             dispatcher.register(CommandManager
-             .literal("teaminvite")
-             .requires(source -> source.hasPermissionLevel(0))
-             .then(CommandManager.argument("player", EntityArgumentType.entity())
-             .requires(source -> source.hasPermissionLevel(0))
-             .executes(context -> {
-             return invitePlayer(context, EntityArgumentType.getEntity(context, "player").getEntityName());
-             }).requires(source -> source.hasPermissionLevel(0))));
 
-             // Command for a player to accept an invitation
-             dispatcher.register(CommandManager
-             .literal("teamaccept")
-             .requires(source -> source.hasPermissionLevel(0))
-             .then(CommandManager.argument("team", IntegerArgumentType.integer())
-             .executes(context -> {
-             return acceptInvitation(context, IntegerArgumentType.getInteger(context, "team"));
-             }).requires(source -> source.hasPermissionLevel(0))));
+            // Command to invite a player to a team
+            dispatcher.register(CommandManager
+                    .literal("teaminvite")
+                    .requires(source -> source.hasPermissionLevel(0))
+                    .then(CommandManager.argument("player", EntityArgumentType.entity())
+                    .requires(source -> source.hasPermissionLevel(0))
+                    .then(CommandManager.argument("teamName", StringArgumentType.word())
+                    .suggests(TEAM_SUGGESTIONS)
+                    .executes(context -> invitePlayer(context, EntityArgumentType.getEntity(context, "player").getEntityName()))))
+            );
 
+            // Command for a player to accept an invitation
+            dispatcher.register(CommandManager
+            .literal("teamaccept")
+            .requires(source -> source.hasPermissionLevel(0))
+            .then(CommandManager.argument("team", IntegerArgumentType.integer()).suggests(TEAM_SUGGESTIONS)
+            .executes(context -> {
+            return acceptInvitation(context, String.valueOf(IntegerArgumentType.getInteger(context, "team")));
+            }).requires(source -> source.hasPermissionLevel(0))));
 
-             */
+            // Command for a player to decline an invitation
+            dispatcher.register(CommandManager
+            .literal("teamdecline")
+            .requires(source -> source.hasPermissionLevel(0))
+            .then(CommandManager.argument("team", StringArgumentType.string()).suggests(TEAM_SUGGESTIONS)
+            .executes(context -> {
+            return declineInvitation(context, StringArgumentType.getString(context, "team"));
+            }).requires(source -> source.hasPermissionLevel(0))));
+
             // Command for a player to leave a team
             dispatcher.register(CommandManager
                     .literal("teamleave")
                     .requires(source -> source.hasPermissionLevel(0))
                     .executes(CreateTeamCommand::leaveTeam)
                     .requires(source -> source.hasPermissionLevel(0)));
+
+            // Command for a player to leave a team
+            dispatcher.register(CommandManager
+                    .literal("teamleader")
+                    .requires(source -> source.hasPermissionLevel(0))
+                    .then(CommandManager.argument("teamName", StringArgumentType.word())
+                            .suggests(TEAM_SUGGESTIONS)
+                    .executes(CreateTeamCommand::leaveTeam)
+                    .requires(source -> source.hasPermissionLevel(0))));
 
         });
     }
@@ -129,7 +154,6 @@ public class CreateTeamCommand {
                 player.sendMessage(Text.literal("Error: Unable to find an available team name."), true);
                 return 0;
             }
-            player.sendMessage(Text.literal("try again"), true);
             teamName = String.valueOf(nextTeamId);
         }
 
@@ -162,10 +186,128 @@ public class CreateTeamCommand {
 
         UUID leaderUuid = player.getUuid();  // UUID of the player who created the team
         teamLeaders.put(teamName, leaderUuid);  // Store the leader UUID for the team
+        // Save the leader UUID in the teamInvitations map
+        teamInvitations.put(teamName, leaderUuid);
 
         return 1;
     }
+    private static void sendInvitation(PlayerEntity invitingPlayer, ServerPlayerEntity invitedPlayer, String teamName) {
+        // Your logic to send an invitation message to the invited player
+        // For example, you can use the following code to send a message:
+        Text invitationMessage = Text.literal("You have been invited to join " + teamName)
+                .formatted(Formatting.GREEN)
+                .append(Text.literal("\nType /teamaccept " + teamName + " to accept the invitation.")
+                        .formatted(Formatting.YELLOW))
+                .append(Text.literal("\nType /teamdecline " + teamName + " to decline the invitation.")
+                        .formatted(Formatting.RED));
+        invitedPlayer.sendMessage(invitationMessage, false);
+        invitingPlayer.sendMessage(Text.of("You have invited  "+ invitedPlayer.getName()+ "."));
+        // You can also store information about the invitation for later processing
+        // (e.g., the inviting player, the team name, etc.)
+        // InviteData inviteData = new InviteData(invitingPlayer.getUuid(), teamName, System.currentTimeMillis());
+        // invitedPlayer.getDataTracker().set(ModData.INVITE_DATA, inviteData);
+    }
+    private static int invitePlayer(CommandContext<ServerCommandSource> context, String playerName) throws CommandSyntaxException {
+        ServerCommandSource source = context.getSource();
+        PlayerEntity invitingPlayer = source.getPlayer();
+        Scoreboard scoreboard = source.getServer().getScoreboard();
 
+        // Ensure that the inviting player is in a team
+        if (invitingPlayer.getScoreboardTeam()==null){
+            invitingPlayer.sendMessage(Text.literal("You are not in a team."), true);
+            return 0;
+        }
+        Team invitingPlayerTeam = scoreboard.getTeam(invitingPlayer.getScoreboardTeam().getName());
+        if (invitingPlayerTeam == null) {
+            invitingPlayer.sendMessage(Text.literal("You are not in a team."), true);
+            return 0;
+        }
+
+        // Get the team name
+        String teamName = invitingPlayerTeam.getName();
+
+        // Check if the inviting player is the leader of the team
+        UUID leaderUuid = teamLeaders.get(teamName);
+        if (leaderUuid == null || !leaderUuid.equals(invitingPlayer.getUuid())) {
+            invitingPlayer.sendMessage(Text.literal("You are not the leader of this team."), true);
+            return 0;
+        }
+
+        // Get the player to be invited
+        ServerPlayerEntity invitedPlayer = EntityArgumentType.getPlayer(context, "player");
+
+        // Check if the invited player is already in a team
+        if (invitedPlayer.getScoreboardTeam() != null) {
+            invitingPlayer.sendMessage(Text.literal("Player " + invitedPlayer.getName() + " is already in a team."), true);
+            return 0;
+        }
+
+        // Your logic to handle the invitation (e.g., send an invitation message)
+        sendInvitation(invitingPlayer, invitedPlayer, teamName);
+
+        return 1;
+    }
+    private static int acceptInvitation(CommandContext<ServerCommandSource> context, String teamName) {
+        ServerCommandSource source = context.getSource();
+        ServerPlayerEntity acceptingPlayer = source.getPlayer();
+        Scoreboard scoreboard = source.getServer().getScoreboard();
+
+        // Get the team by name
+        Team team = scoreboard.getTeam(teamName);
+
+
+        // Check if the player has received an invitation for the specified team
+        UUID invitingPlayerUuid = teamInvitations.get(teamName);
+        if (invitingPlayerUuid == null || !invitingPlayerUuid.equals(acceptingPlayer.getUuid())) {
+            acceptingPlayer.sendMessage(Text.literal("You haven't received an invitation to join " + teamName + "."), true);
+            return 0;
+        }
+
+        // Add the player to the team
+        assert acceptingPlayer != null;
+        scoreboard.addPlayerToTeam(acceptingPlayer.getEntityName(), team);
+
+        // Inform the player about joining the team
+        acceptingPlayer.sendMessage(Text.literal("You have joined the team " + teamName + "."), false);
+
+        // Clear the invitation for the player
+        teamInvitations.remove(teamName);
+
+        return 1;
+    }
+    private static int declineInvitation(CommandContext<ServerCommandSource> context, String teamName) {
+        ServerCommandSource source = context.getSource();
+        ServerPlayerEntity acceptingPlayer = source.getPlayer();
+        Scoreboard scoreboard = source.getServer().getScoreboard();
+
+        // Check if the player has received an invitation for the specified team
+        UUID invitingPlayerUuid = teamLeaders.get(teamName);
+        if (invitingPlayerUuid == null || !invitingPlayerUuid.equals(acceptingPlayer.getUuid())) {
+            assert acceptingPlayer != null;
+            acceptingPlayer.sendMessage(Text.literal("You haven't received an invitation to join " + teamName + "."), true);
+            return 0;
+        }
+
+        // Get the team by name
+        assert scoreboard.getTeams()!=null;
+        Team team = scoreboard.getTeam(teamName);
+
+        // Check if the team exists
+        if (team == null) {
+            assert acceptingPlayer != null;
+            acceptingPlayer.sendMessage(Text.literal("Error: Team " + teamName + " does not exist."), true);
+            return 0;
+        }
+
+        // Inform the player about joining the team
+        assert acceptingPlayer != null;
+        acceptingPlayer.sendMessage(Text.literal("You have declined the team " + teamName + "."), false);
+
+        // Clear the invitation for the player
+        teamLeaders.remove(teamName);
+
+        return 1;
+    }
     private static int removeAllTeams(CommandContext<ServerCommandSource> context) {
         ServerCommandSource source = context.getSource();
         Scoreboard scoreboard = source.getServer().getScoreboard();
@@ -182,7 +324,6 @@ public class CreateTeamCommand {
         player.sendMessage(Text.literal("All teams removed!").formatted(Formatting.GREEN), true);
         return 1;
     }
-
     private static int readTeams(CommandContext<ServerCommandSource> context) {
         ServerCommandSource source = context.getSource();
         ServerPlayerEntity player = source.getPlayer();
@@ -199,7 +340,6 @@ public class CreateTeamCommand {
 
         return 1;
     }
-
     private static int disbandTeam(CommandContext<ServerCommandSource> context) {
         ServerCommandSource source = context.getSource();
         PlayerEntity player = source.getPlayer();
@@ -237,7 +377,6 @@ public class CreateTeamCommand {
         player.sendMessage(Text.literal("Team " + teamName + " disbanded."), false);
         return 1;
     }
-
     private static int leaveTeam(CommandContext<ServerCommandSource> context) {
         ServerCommandSource source = context.getSource();
         PlayerEntity player = source.getPlayer();
@@ -245,6 +384,7 @@ public class CreateTeamCommand {
 
 
         // Get the team that the player is currently in
+        assert player != null;
         if (player.getScoreboardTeam()==null){
             player.sendMessage(Text.literal("You are not in a team."), true);
             return 0;
@@ -254,19 +394,20 @@ public class CreateTeamCommand {
 
 
         // Get the team name
+        assert playerTeam != null;
         String teamName = playerTeam.getName();
-        // Get the team leader
-        UUID leaderUuid = teamLeaders.get(teamName);
         // Check if the player is in a team
-        if (player.getUuid()==leaderUuid){
-            player.sendMessage(Text.literal("You are the leader, you cant leave, Use /teamdisband."), true);
-            return 0;
-        }
-        if (playerTeam == null) {
+        if (teamName == null) {
             player.sendMessage(Text.literal("You are not in a team."), true);
             return 0;
         }
-
+        // Get the team leader
+        UUID leaderUuid = teamLeaders.get(teamName);
+        // Chick if the player is the leader
+        if (leaderUuid.equals(player.getUuid())) {
+            player.sendMessage(Text.literal("You are the leader of this team."), true);
+            return 0;
+        }
         // Remove the player from the team
         scoreboard.removePlayerFromTeam(player.getEntityName(), playerTeam);
 
@@ -276,9 +417,7 @@ public class CreateTeamCommand {
         player.sendMessage(Text.literal("You left the team " + teamName + "."), false);
         return 1;
     }
-
-
-    private static void populateCreatedTeamNames(CommandContext<ServerCommandSource> context) {
+    private static Set<String> populateCreatedTeamNames(CommandContext<ServerCommandSource> context) {
         ServerCommandSource source = context.getSource();
         Scoreboard scoreboard = source.getServer().getScoreboard();
         createdTeamNames.clear(); // Clear existing entries
@@ -287,6 +426,10 @@ public class CreateTeamCommand {
         for (Team team : scoreboard.getTeams()) {
             createdTeamNames.add(team.getName());
         }
+        return createdTeamNames;
     }
-
+    private static final SuggestionProvider<ServerCommandSource> TEAM_SUGGESTIONS = (context, builder) -> {
+        Set<String> teamNames = populateCreatedTeamNames(context);
+        return CommandSource.suggestMatching(teamNames, builder);
+    };
 }
