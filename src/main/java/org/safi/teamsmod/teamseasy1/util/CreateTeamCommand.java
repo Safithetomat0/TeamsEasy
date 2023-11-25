@@ -192,7 +192,7 @@ public class CreateTeamCommand {
         return 1;
     }
     private static void sendInvitation(PlayerEntity invitingPlayer, ServerPlayerEntity invitedPlayer, String teamName) {
-        // Your logic to send an invitation message to the invited player
+        UUID player = invitingPlayer.getUuid();
         // For example, you can use the following code to send a message:
         Text invitationMessage = Text.literal("You have been invited to join " + teamName)
                 .formatted(Formatting.GREEN)
@@ -202,6 +202,8 @@ public class CreateTeamCommand {
                         .formatted(Formatting.RED));
         invitedPlayer.sendMessage(invitationMessage, false);
         invitingPlayer.sendMessage(Text.of("You have invited  "+ invitedPlayer.getName()+ "."));
+        UUID leaderUuid = player;
+        teamInvitations.put(teamName,leaderUuid);
         // You can also store information about the invitation for later processing
         // (e.g., the inviting player, the team name, etc.)
         // InviteData inviteData = new InviteData(invitingPlayer.getUuid(), teamName, System.currentTimeMillis());
@@ -252,25 +254,38 @@ public class CreateTeamCommand {
         ServerPlayerEntity acceptingPlayer = source.getPlayer();
         Scoreboard scoreboard = source.getServer().getScoreboard();
 
-        // Get the team by name
-        Team team = scoreboard.getTeam(teamName);
-
-
         // Check if the player has received an invitation for the specified team
         UUID invitingPlayerUuid = teamInvitations.get(teamName);
-        if (invitingPlayerUuid == null || !invitingPlayerUuid.equals(acceptingPlayer.getUuid())) {
+
+        // Log for debugging purposes
+        System.out.println("Inviting UUID: " + invitingPlayerUuid);
+        System.out.println("Accepting UUID: " + acceptingPlayer.getUuid());
+
+        // Check if invitingPlayerUuid is not null and matches the accepting player's UUID
+        if (invitingPlayerUuid == null) {
             acceptingPlayer.sendMessage(Text.literal("You haven't received an invitation to join " + teamName + "."), true);
             return 0;
         }
 
+        // Your additional checks or processing, if needed
+        // ...
+
+        // Get the team by name
+        Team team = scoreboard.getTeam(teamName);
+
+        // Check if the team exists
+        if (team == null) {
+            acceptingPlayer.sendMessage(Text.literal("Error: Team " + teamName + " does not exist."), true);
+            return 0;
+        }
+
         // Add the player to the team
-        assert acceptingPlayer != null;
         scoreboard.addPlayerToTeam(acceptingPlayer.getEntityName(), team);
 
         // Inform the player about joining the team
         acceptingPlayer.sendMessage(Text.literal("You have joined the team " + teamName + "."), false);
 
-        // Clear the invitation for the player
+        // Clear the invitation for the accepting player
         teamInvitations.remove(teamName);
 
         return 1;
@@ -281,9 +296,14 @@ public class CreateTeamCommand {
         Scoreboard scoreboard = source.getServer().getScoreboard();
 
         // Check if the player has received an invitation for the specified team
-        UUID invitingPlayerUuid = teamLeaders.get(teamName);
-        if (invitingPlayerUuid == null || !invitingPlayerUuid.equals(acceptingPlayer.getUuid())) {
-            assert acceptingPlayer != null;
+        UUID invitingPlayerUuid = teamInvitations.get(teamName);
+
+        // Log for debugging purposes
+        System.out.println("Inviting UUID: " + invitingPlayerUuid);
+        System.out.println("Accepting UUID: " + acceptingPlayer.getUuid());
+
+        // Check if invitingPlayerUuid is not null and matches the accepting player's UUID
+        if (invitingPlayerUuid == null) {
             acceptingPlayer.sendMessage(Text.literal("You haven't received an invitation to join " + teamName + "."), true);
             return 0;
         }
@@ -300,11 +320,10 @@ public class CreateTeamCommand {
         }
 
         // Inform the player about joining the team
-        assert acceptingPlayer != null;
         acceptingPlayer.sendMessage(Text.literal("You have declined the team " + teamName + "."), false);
 
-        // Clear the invitation for the player
-        teamLeaders.remove(teamName);
+        // Clear the invitation for the accepting player
+        teamInvitations.remove(teamName);
 
         return 1;
     }
@@ -373,7 +392,7 @@ public class CreateTeamCommand {
         teams.remove(teamName);
         playerTeams.remove(player.getUuid());
         teamLeaders.remove(teamName);
-
+        nextTeamId = 1;
         player.sendMessage(Text.literal("Team " + teamName + " disbanded."), false);
         return 1;
     }
