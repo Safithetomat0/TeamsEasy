@@ -2,6 +2,7 @@ package org.safi.teamsmod.teamseasy1.util;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
@@ -9,11 +10,13 @@ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.command.CommandSource;
 import net.minecraft.command.argument.EntityArgumentType;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.scoreboard.AbstractTeam;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.Team;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Style;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -30,8 +33,6 @@ public class CreateTeamCommand {
     private static final Set<String> createdTeamNames = new HashSet<>();
     private static final int MAX_TEAM_ID = 50;
     private static int nextTeamId = 1;
-    private static final File DATA_FOLDER = new File("world/data"); // Adjust the path as needed
-    private static final File TEAMS_FILE = new File(DATA_FOLDER, "teams.txt");
     private static final Map<String, UUID> teamLeaders = new HashMap<>();
     private static final Map<String, UUID> teamInvitations = new HashMap<>();
 
@@ -41,77 +42,75 @@ public class CreateTeamCommand {
 
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            // Command to create a team
-            dispatcher.register(CommandManager
-                    .literal("tcreate")
+            LiteralArgumentBuilder<ServerCommandSource> teamCommand = CommandManager
+                    .literal("t")
+                    .requires(source -> source.hasPermissionLevel(0));
+
+            teamCommand.then(CommandManager
+                    .literal("create")
                     .requires(source -> source.hasPermissionLevel(0))
                     .executes(CreateTeamCommand::createTeam)
                     .requires(source -> source.hasPermissionLevel(0)));
 
-            dispatcher.register(CommandManager
-                    .literal("tremoveall")
+            teamCommand.then(CommandManager
+                    .literal("removeall")
                     .requires(source -> source.hasPermissionLevel(2))
                     .executes(CreateTeamCommand::removeAllTeams)
                     .requires(source -> source.hasPermissionLevel(2)));
-            dispatcher.register(CommandManager
-                    .literal("tsinfo")
-                    .requires(source -> source.hasPermissionLevel(0))
-                    .executes(CreateTeamCommand::readTeams)
-                    .requires(source -> source.hasPermissionLevel(0)));
 
-            // Command to disband teams
-            dispatcher.register(CommandManager
-                    .literal("tdisband")
+            teamCommand.then(CommandManager
+                    .literal("disband")
                     .requires(source -> source.hasPermissionLevel(0))
                     .executes(CreateTeamCommand::disbandTeam)
                     .requires(source -> source.hasPermissionLevel(0)));
 
-            // Command to invite a player to a team
-            dispatcher.register(CommandManager
-                    .literal("tinvite")
+            teamCommand.then(CommandManager
+                    .literal("invite")
                     .requires(source -> source.hasPermissionLevel(0))
                     .then(CommandManager.argument("player", EntityArgumentType.entity())
+                            .requires(source -> source.hasPermissionLevel(0))
+                            .then(CommandManager.argument("teamName", StringArgumentType.word())
+                                    .suggests(TEAM_SUGGESTIONS)
+                                    .executes(context -> invitePlayer(context, EntityArgumentType.getEntity(context, "player").getEntityName())))));
+
+            teamCommand.then(CommandManager
+                    .literal("accept")
                     .requires(source -> source.hasPermissionLevel(0))
-                    .then(CommandManager.argument("teamName", StringArgumentType.word())
-                    .suggests(TEAM_SUGGESTIONS)
-                    .executes(context -> invitePlayer(context, EntityArgumentType.getEntity(context, "player").getEntityName()))))
-            );
+                    .then(CommandManager.argument("team", IntegerArgumentType.integer()).suggests(TEAM_SUGGESTIONS)
+                            .executes(context -> acceptInvitation(context, String.valueOf(IntegerArgumentType.getInteger(context, "team"))))
+                            .requires(source -> source.hasPermissionLevel(0))));
 
-            // Command for a player to accept an invitation
-            dispatcher.register(CommandManager
-            .literal("tccept")
-            .requires(source -> source.hasPermissionLevel(0))
-            .then(CommandManager.argument("team", IntegerArgumentType.integer()).suggests(TEAM_SUGGESTIONS)
-            .executes(context -> {
-            return acceptInvitation(context, String.valueOf(IntegerArgumentType.getInteger(context, "team")));
-            }).requires(source -> source.hasPermissionLevel(0))));
+            teamCommand.then(CommandManager
+                    .literal("decline")
+                    .requires(source -> source.hasPermissionLevel(0))
+                    .then(CommandManager.argument("team", StringArgumentType.string()).suggests(TEAM_SUGGESTIONS)
+                            .executes(context -> declineInvitation(context, StringArgumentType.getString(context, "team")))
+                            .requires(source -> source.hasPermissionLevel(0))));
 
-            // Command for a player to decline an invitation
-            dispatcher.register(CommandManager
-            .literal("tdecline")
-            .requires(source -> source.hasPermissionLevel(0))
-            .then(CommandManager.argument("team", StringArgumentType.string()).suggests(TEAM_SUGGESTIONS)
-            .executes(context -> {
-            return declineInvitation(context, StringArgumentType.getString(context, "team"));
-            }).requires(source -> source.hasPermissionLevel(0))));
-
-            // Command for a player to leave a team
-            dispatcher.register(CommandManager
-                    .literal("tleave")
+            teamCommand.then(CommandManager
+                    .literal("leave")
                     .requires(source -> source.hasPermissionLevel(0))
                     .executes(CreateTeamCommand::leaveTeam)
                     .requires(source -> source.hasPermissionLevel(0)));
-
-            // Command for a player to leave a team
-            dispatcher.register(CommandManager
-                    .literal("tleader")
+                            /*
+            teamCommand.then(CommandManager
+                    .literal("leader")
                     .requires(source -> source.hasPermissionLevel(0))
                     .then(CommandManager.argument("teamName", StringArgumentType.word())
                             .suggests(TEAM_SUGGESTIONS)
-                    .executes(CreateTeamCommand::leaveTeam)
-                    .requires(source -> source.hasPermissionLevel(0))));
+                            .executes(CreateTeamCommand::leaveTeam)
+                            .requires(source -> source.hasPermissionLevel(0))));
+                             */
 
+            teamCommand.then(CommandManager
+                    .literal("list")
+                    .requires(source -> source.hasPermissionLevel(0))
+                    .executes(CreateTeamCommand::listTeam)
+                    .requires(source -> source.hasPermissionLevel(0)));
+
+            dispatcher.register(teamCommand);
         });
+
     }
 
     private static int createTeam(CommandContext<ServerCommandSource> context) {
@@ -178,7 +177,12 @@ public class CreateTeamCommand {
         team.setColor(teamColor);
 
         // Display the team name in a random color
-        Text teamMessage = Text.literal("Team " + teamName + " created.").setStyle(teamStyle);
+        Text teamMessage = Text.literal("You have created team :  " + teamName)
+                .formatted(Formatting.GREEN)
+                .append(Text.literal("\nType [ /t invite " + "<player name>" + teamName + "] to invite a player.")
+                        .formatted(Formatting.YELLOW))
+                .append(Text.literal("\nType [ /t disband to leave the team.")
+                        .formatted(Formatting.YELLOW));
         player.sendMessage(teamMessage, false);
 
         // Save the created team name to the file
@@ -196,9 +200,9 @@ public class CreateTeamCommand {
         // For example, you can use the following code to send a message:
         Text invitationMessage = Text.literal("You have been invited to join " + teamName)
                 .formatted(Formatting.GREEN)
-                .append(Text.literal("\nType /taccept " + teamName + " to accept the invitation.")
+                .append(Text.literal("\nType /t accept " + teamName + " to accept the invitation.")
                         .formatted(Formatting.YELLOW))
-                .append(Text.literal("\nType /tdecline " + teamName + " to decline the invitation.")
+                .append(Text.literal("\nType /t decline " + teamName + " to decline the invitation.")
                         .formatted(Formatting.RED));
         invitedPlayer.sendMessage(invitationMessage, false);
         invitingPlayer.sendMessage(Text.of("You have invited  "+ invitedPlayer.getName()+ "."));
@@ -343,22 +347,6 @@ public class CreateTeamCommand {
         player.sendMessage(Text.literal("All teams removed!").formatted(Formatting.GREEN), true);
         return 1;
     }
-    private static int readTeams(CommandContext<ServerCommandSource> context) {
-        ServerCommandSource source = context.getSource();
-        ServerPlayerEntity player = source.getPlayer();
-        try (BufferedReader reader = new BufferedReader(new FileReader(TEAMS_FILE))) {
-            String line;
-            assert player != null;
-            player.sendMessage(Text.literal("Teams in teams.txt:").formatted(Formatting.YELLOW));
-            while ((line = reader.readLine()) != null) {
-                player.sendMessage(Text.literal(line));
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-        return 1;
-    }
     private static int disbandTeam(CommandContext<ServerCommandSource> context) {
         ServerCommandSource source = context.getSource();
         PlayerEntity player = source.getPlayer();
@@ -435,6 +423,35 @@ public class CreateTeamCommand {
 
         player.sendMessage(Text.literal("You left the team " + teamName + "."), false);
         return 1;
+    }
+    private static int listTeam(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        ServerWorld world = source.getWorld();
+        Scoreboard scoreboard = source.getServer().getScoreboard();
+
+
+        // Create a list to store player names and their teams
+        List<String> playerTeamsList = new ArrayList<>();
+
+        // Iterate through players and add their name and team to the list
+        world.getPlayers().forEach(player -> {
+            AbstractTeam team = player.getScoreboardTeam();
+            String playerName = null;
+            String teamName = null;
+            if (team != null) {
+                playerName = player.getName().getString();
+                teamName = team.getName();
+                playerTeamsList.add(playerName + ": " + teamName.formatted(team.getColor()));
+                // Construct a text message to send to the player
+                Text sendMessage = Text.literal(playerName + ": " + teamName);
+
+
+            }
+            // Send the message to the player
+            source.getPlayer().sendMessage(Text.literal(playerName + ": " + teamName), false);
+        });
+        // Return the number of players processed
+        return playerTeamsList.size();
     }
     private static Set<String> populateCreatedTeamNames(CommandContext<ServerCommandSource> context) {
         ServerCommandSource source = context.getSource();
