@@ -21,17 +21,18 @@ import net.minecraft.text.Style;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
-import java.io.*;
 import java.util.*;
 
 public class CreateTeamCommand {
 
-    private static final long COOLDOWN_TIME = 100; //30000; // 30 seconds cooldown
+    private static final long COOLDOWN_TIME = 60000; // 60 seconds cooldown
     private static final Map<UUID, Long> cooldowns = new HashMap<>();
+    private static final Map<UUID, Long> invCooldowns = new HashMap<>();
     private static final Map<Integer, Team> teams = new HashMap<>();
     private static final Map<UUID, Integer> playerTeams = new HashMap<>();
     private static final Set<String> createdTeamNames = new HashSet<>();
     private static final int MAX_TEAM_ID = 50;
+    private static final int MAX_TEAM_MEMBERS = 4;
     private static int nextTeamId = 1;
     private static final Map<String, UUID> teamLeaders = new HashMap<>();
     private static final Map<String, UUID> teamInvitations = new HashMap<>();
@@ -120,7 +121,7 @@ public class CreateTeamCommand {
         Random random = new Random();
 
         if (nextTeamId > MAX_TEAM_ID) {
-            player.sendMessage(Text.literal("Error: Unable to find an available team name."), true);
+            player.sendMessage(Text.literal("Error: Unable to find an available team."), false);
             return 0;
         }
 
@@ -134,11 +135,15 @@ public class CreateTeamCommand {
 
             if (elapsedTime < COOLDOWN_TIME) {
                 long remainingTime = COOLDOWN_TIME - elapsedTime;
-                player.sendMessage(Text.literal("You must wait " + (remainingTime / 1000) + " seconds before creating another team."), true);
+                player.sendMessage(Text.literal("You must wait " + (remainingTime / 1000) + " seconds before creating another team."), false);
                 return 0;
             }
         }
 
+        if (player.getScoreboardTeam() != null) {
+            player.sendMessage(Text.literal("You're in a team."), false);
+            return 0;
+        }
         // Try to create a team with the current nextTeamId
         String teamName = String.valueOf(nextTeamId);
 
@@ -150,7 +155,7 @@ public class CreateTeamCommand {
             // Check if nextTeamId exceeds the limit
             if (nextTeamId > MAX_TEAM_ID) {
                 nextTeamId = 1;
-                player.sendMessage(Text.literal("Error: Unable to find an available team name."), true);
+                player.sendMessage(Text.literal("Error: Unable to find an available team name."), false);
                 return 0;
             }
             teamName = String.valueOf(nextTeamId);
@@ -196,6 +201,7 @@ public class CreateTeamCommand {
         return 1;
     }
     private static void sendInvitation(PlayerEntity invitingPlayer, ServerPlayerEntity invitedPlayer, String teamName) {
+
         UUID player = invitingPlayer.getUuid();
         // For example, you can use the following code to send a message:
         Text invitationMessage = Text.literal("You have been invited to join " + teamName)
@@ -218,14 +224,27 @@ public class CreateTeamCommand {
         PlayerEntity invitingPlayer = source.getPlayer();
         Scoreboard scoreboard = source.getServer().getScoreboard();
 
+        long currentTime = System.currentTimeMillis();
+
+        // Check cooldown
+        if (invCooldowns.containsKey(invitingPlayer.getUuid())) {
+            long lastTime = invCooldowns.get(invitingPlayer.getUuid());
+            long elapsedTime = currentTime - lastTime;
+
+            if (elapsedTime < COOLDOWN_TIME) {
+                long remainingTime = COOLDOWN_TIME - elapsedTime;
+                invitingPlayer.sendMessage(Text.literal("You must wait " + (remainingTime / 1000) + " seconds before inviting another player."), false);
+                return 0;
+            }
+        }
         // Ensure that the inviting player is in a team
         if (invitingPlayer.getScoreboardTeam()==null){
-            invitingPlayer.sendMessage(Text.literal("You are not in a team."), true);
+            invitingPlayer.sendMessage(Text.literal("You are not in a team."), false);
             return 0;
         }
         Team invitingPlayerTeam = scoreboard.getTeam(invitingPlayer.getScoreboardTeam().getName());
         if (invitingPlayerTeam == null) {
-            invitingPlayer.sendMessage(Text.literal("You are not in a team."), true);
+            invitingPlayer.sendMessage(Text.literal("You are not in a team."), false);
             return 0;
         }
 
@@ -235,7 +254,13 @@ public class CreateTeamCommand {
         // Check if the inviting player is the leader of the team
         UUID leaderUuid = teamLeaders.get(teamName);
         if (leaderUuid == null || !leaderUuid.equals(invitingPlayer.getUuid())) {
-            invitingPlayer.sendMessage(Text.literal("You are not the leader of this team."), true);
+            invitingPlayer.sendMessage(Text.literal("You are not the leader of this team."), false);
+            return 0;
+        }
+
+        // Check if the team already has 4 members
+        if (invitingPlayerTeam.getPlayerList().size() >= MAX_TEAM_MEMBERS) {
+            invitingPlayer.sendMessage(Text.literal("Your team already has 4 members. You cannot invite more players."), false);
             return 0;
         }
 
@@ -244,7 +269,7 @@ public class CreateTeamCommand {
 
         // Check if the invited player is already in a team
         if (invitedPlayer.getScoreboardTeam() != null) {
-            invitingPlayer.sendMessage(Text.literal("Player " + invitedPlayer.getName() + " is already in a team."), true);
+            invitingPlayer.sendMessage(Text.literal("Player " + invitedPlayer.getName() + " is already in a team."), false);
             return 0;
         }
 
@@ -267,7 +292,7 @@ public class CreateTeamCommand {
 
         // Check if invitingPlayerUuid is not null and matches the accepting player's UUID
         if (invitingPlayerUuid == null) {
-            acceptingPlayer.sendMessage(Text.literal("You haven't received an invitation to join " + teamName + "."), true);
+            acceptingPlayer.sendMessage(Text.literal("You haven't received an invitation to join " + teamName + "."), false);
             return 0;
         }
 
@@ -279,7 +304,7 @@ public class CreateTeamCommand {
 
         // Check if the team exists
         if (team == null) {
-            acceptingPlayer.sendMessage(Text.literal("Error: Team " + teamName + " does not exist."), true);
+            acceptingPlayer.sendMessage(Text.literal("Error: Team " + teamName + " does not exist."), false);
             return 0;
         }
 
